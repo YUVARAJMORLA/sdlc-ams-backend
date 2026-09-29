@@ -1,0 +1,32 @@
+﻿# Dependencies
+node_modules/
+
+# Environment variables (NEVER commit secrets)
+.env
+.env.local
+.env.production
+
+# SQLite local DB files
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+npm-debug.log*
+
+# Dev/test utility scripts
+check_questions.cjs
+clear_cache.mjs
+dedup_questions.cjs
+fix_questions_permanent.cjs
+init_db.cjs
+reseed_questions.cjs
+seed_sqlite.cjs
+test_api.js
+test_conn.mjs
+pdf_decompressed.txt
+
+# OS files
+Thumbs.db
+.DS_Store
