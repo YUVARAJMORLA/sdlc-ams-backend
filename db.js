@@ -2,34 +2,100 @@
  * backend/db.js  -- PostgreSQL / Supabase edition
  * Uses the `pg` (node-postgres) library with a connection pool.
  *
- * IMPORTANT: Uses individual connection params (NOT connectionString) because
- * pg's URL parser strips everything after the dot in usernames like
- * "postgres.projectref" — causing "password auth failed for user postgres".
+ * Sanitizes all environment variables (strips accidental surrounding quotes/spaces)
+ * and safely supports both individual DB_* parameters and DATABASE_URL.
  */
 
 import 'dotenv/config';
 import pkg from 'pg';
 const { Pool } = pkg;
 
+function cleanValue(val) {
+  if (val === undefined || val === null) return '';
+  const str = String(val).trim();
+  return str.replace(/^["']|["']$/g, '').trim();
+}
+
+let host = cleanValue(process.env.DB_HOST);
+let port = cleanValue(process.env.DB_PORT);
+let database = cleanValue(process.env.DB_NAME);
+let user = cleanValue(process.env.DB_USER);
+let password = cleanValue(process.env.DB_PASSWORD);
+
+// If DATABASE_URL is provided, safely parse with URL class (does NOT strip dots in username)
+if (process.env.DATABASE_URL) {
+  try {
+    const rawUrl = cleanValue(process.env.DATABASE_URL);
+    const parsed = new URL(rawUrl);
+    if (!host) host = parsed.hostname;
+    if (!port) port = parsed.port;
+    if (!database && parsed.pathname) database = parsed.pathname.replace(/^\//, '');
+    if (!user && parsed.username) user = decodeURIComponent(parsed.username);
+    if (!password && parsed.password) password = decodeURIComponent(parsed.password);
+  } catch (err) {
+    console.warn('[db] Failed to parse DATABASE_URL:', err.message);
+  }
+}
+
+// Project defaults
+host = host || 'aws-1-ap-northeast-1.pooler.supabase.com';
+port = parseInt(port || '5432', 10);
+database = database || 'postgres';
+user = user || 'postgres.uqsodhpbeiirfvlkfohh';
+password = password || 'YUVARAJMORLA123';
+
 // ─────────────────────────────────────────────────────────
 // Connection Pool — individual params bypass pg URL parser
 // ─────────────────────────────────────────────────────────
 const pool = new Pool({
-  host:     process.env.DB_HOST     || 'aws-1-ap-northeast-1.pooler.supabase.com',
-  port:     parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME     || 'postgres',
-  user:     process.env.DB_USER     || 'postgres.uqsodhpbeiirfvlkfohh',
-  password: process.env.DB_PASSWORD || 'YUVARAJMORLA123',
-  ssl:      { rejectUnauthorized: false },
+  host,
+  port,
+  database,
+  user,
+  password,
+  ssl: { rejectUnauthorized: false },
   // Serverless-friendly limits — Vercel spins up many short-lived instances
-  max:                    3,
-  idleTimeoutMillis:      30000,
+  max: 3,
+  idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
 });
 
 pool.on('error', (err) => {
   console.error('Unexpected error on idle PostgreSQL client', err);
 });
+
+// Diagnostic connection test helper
+export async function testDbConnection() {
+  const maskedPass = password ? `${password[0]}***${password.slice(-1)} (length: ${password.length})` : 'MISSING';
+  const config = {
+    host,
+    port,
+    database,
+    user,
+    passwordPreview: maskedPass,
+    ssl: true,
+  };
+  try {
+    const client = await pool.connect();
+    try {
+      const res = await client.query('SELECT NOW() as now, current_user as "currentUser", current_database() as "currentDb"');
+      return { success: true, config, result: res.rows[0] };
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    return {
+      success: false,
+      config,
+      error: {
+        message: err.message,
+        code: err.code,
+        routine: err.routine,
+        hint: err.hint,
+      },
+    };
+  }
+}
 
 // Generic query helper
 async function query(sql, params = []) {

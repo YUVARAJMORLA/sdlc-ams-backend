@@ -25,6 +25,7 @@ import {
   updateReport,
   getLatestReport,
   getReportById,
+  testDbConnection,
 } from './db.js';
 import { getUserIdFromRequest, signToken } from './auth.js';
 import {
@@ -102,6 +103,27 @@ async function requireAdmin(req, res, next) {
   req.user = user;
   next();
 }
+
+// ──────────────────────────────────────────────────────────────────
+// SYSTEM & HEALTH ENDPOINTS
+// ──────────────────────────────────────────────────────────────────
+
+// GET /api/health — Live database connectivity and environment diagnostics
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbStatus = await testDbConnection();
+    return res.status(dbStatus.success ? 200 : 503).json({
+      status: dbStatus.success ? 'healthy' : 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: dbStatus,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: 'error',
+      message: error.message,
+    });
+  }
+});
 
 // ──────────────────────────────────────────────────────────────────
 // AUTH ENDPOINTS
