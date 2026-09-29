@@ -1,17 +1,30 @@
-﻿/**
+/**
  * backend/db.js  -- PostgreSQL / Supabase edition
  * Uses the `pg` (node-postgres) library with a connection pool.
- * Connection is configured via DATABASE_URL env var.
+ *
+ * IMPORTANT: Uses individual connection params (NOT connectionString) because
+ * pg's URL parser strips everything after the dot in usernames like
+ * "postgres.projectref" — causing "password auth failed for user postgres".
  */
 
 import 'dotenv/config';
 import pkg from 'pg';
 const { Pool } = pkg;
 
-// Connection Pool
+// ─────────────────────────────────────────────────────────
+// Connection Pool — individual params bypass pg URL parser
+// ─────────────────────────────────────────────────────────
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // required for Supabase
+  host:     process.env.DB_HOST     || 'aws-1-ap-northeast-1.pooler.supabase.com',
+  port:     parseInt(process.env.DB_PORT || '5432'),
+  database: process.env.DB_NAME     || 'postgres',
+  user:     process.env.DB_USER     || 'postgres.uqsodhpbeiirfvlkfohh',
+  password: process.env.DB_PASSWORD || 'YUVARAJMORLA123',
+  ssl:      { rejectUnauthorized: false },
+  // Serverless-friendly limits — Vercel spins up many short-lived instances
+  max:                    3,
+  idleTimeoutMillis:      30000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on('error', (err) => {
