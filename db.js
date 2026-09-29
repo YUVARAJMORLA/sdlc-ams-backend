@@ -38,11 +38,11 @@ if (process.env.DATABASE_URL) {
 }
 
 // Project defaults
-host = host || 'aws-1-ap-northeast-1.pooler.supabase.com';
+host = host || 'aws-0-ap-northeast-2.pooler.supabase.com';
 port = parseInt(port || '5432', 10);
 database = database || 'postgres';
-user = user || 'postgres.uqsodhpbeiirfvlkfohh';
-password = password || 'YUVARAJMORLA123';
+user = user || 'postgres.xzhtcetjqqvrqauoelcz';
+password = password || 'YUVARAJMORLA';
 
 // ─────────────────────────────────────────────────────────
 // Connection Pool — individual params bypass pg URL parser
