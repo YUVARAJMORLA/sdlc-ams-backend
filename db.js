@@ -64,7 +64,7 @@ pool.on('error', (err) => {
   console.error('Unexpected error on idle PostgreSQL client', err);
 });
 
-// Diagnostic connection test helper
+// Diagnostic connection test helper — tests primary port and tries 6543 if 5432 fails
 export async function testDbConnection() {
   const maskedPass = password ? `${password[0]}***${password.slice(-1)} (length: ${password.length})` : 'MISSING';
   const config = {
@@ -75,26 +75,56 @@ export async function testDbConnection() {
     passwordPreview: maskedPass,
     ssl: true,
   };
-  try {
-    const client = await pool.connect();
+
+  async function tryConnect(p) {
+    const testPool = new Pool({
+      host,
+      port: p,
+      database,
+      user,
+      password,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 8000,
+    });
     try {
-      const res = await client.query('SELECT NOW() as now, current_user as "currentUser", current_database() as "currentDb"');
-      return { success: true, config, result: res.rows[0] };
+      const client = await testPool.connect();
+      try {
+        const res = await client.query('SELECT NOW() as now, current_user as "currentUser", current_database() as "currentDb"');
+        return { success: true, port: p, result: res.rows[0] };
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      return {
+        success: false,
+        port: p,
+        error: {
+          message: err.message,
+          code: err.code,
+        },
+      };
     } finally {
-      client.release();
+      await testPool.end().catch(() => {});
     }
-  } catch (err) {
-    return {
-      success: false,
-      config,
-      error: {
-        message: err.message,
-        code: err.code,
-        routine: err.routine,
-        hint: err.hint,
-      },
-    };
   }
+
+  // Test configured port
+  const primaryResult = await tryConnect(port);
+  if (primaryResult.success) {
+    return { success: true, config, result: primaryResult.result };
+  }
+
+  // If primary port failed, try alternate port (5432 <-> 6543)
+  const alternatePort = port === 5432 ? 6543 : 5432;
+  const altResult = await tryConnect(alternatePort);
+
+  return {
+    success: false,
+    config,
+    primaryPort: { port, ...primaryResult },
+    alternatePort: { port: alternatePort, ...altResult },
+    error: primaryResult.error,
+  };
 }
 
 // Generic query helper
