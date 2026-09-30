@@ -357,3 +357,7 @@ INSERT INTO questions (id, framework, area, sub_area, practice, type, question_t
 (209,'AMS','Release Management','Release Readiness Assessment','AI-Powered Release Gate Assessment','extent','To what extent is the following true in your current practice: An AI agent evaluates release readiness by aggregating test coverage, open defects, change risk scores, and deployment history into a structured go/no-go recommendation. The release manager reviews the AI recommendation — they do not compile the readiness evidence manually.'),
 (210,'AMS','Release Management','Automated Release Orchestration','End-to-End Release Pipeline Orchestration','extent','To what extent does your team use AI agents to orchestrate the end-to-end release pipeline — coordinating environment provisioning, smoke tests, approval workflows, and rollback triggers automatically? The release engineer sets guardrails and approves the final gate; the agent executes and monitors the pipeline.') ON CONFLICT (id) DO NOTHING;
 
+-- ------------------------------------------------------------------------------
+-- Reset serial sequence to prevent duplicate key errors on new question inserts
+-- ------------------------------------------------------------------------------
+SELECT setval('questions_id_seq', (SELECT COALESCE(MAX(id), 1) FROM questions));
