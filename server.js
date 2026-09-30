@@ -138,10 +138,11 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(200).json({ success: false, message: 'Email and password are required' });
     }
 
-    let authenticatedUser = await authenticateUser(email, password);
+    const cleanEmail = email.includes('@') ? email.trim() : `${email.trim()}@tcs.com`;
+    let authenticatedUser = await authenticateUser(cleanEmail, password, req);
 
     // Bootstrap: allow default admin account if it isn't in DB yet
-    if (!authenticatedUser && email.toLowerCase() === 'admin@sdlc.com' && password === 'admin123') {
+    if (!authenticatedUser && cleanEmail.toLowerCase() === 'admin@sdlc.com' && password === 'admin123') {
       const bcrypt = await import('bcryptjs');
       const salt = await bcrypt.default.genSalt(10);
       const hashedPassword = await bcrypt.default.hash(password, salt);
@@ -158,7 +159,16 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(200).json({
         token,
         message: 'Admin login successful',
-        user: { id: adminUser.id, email: 'admin@sdlc.com', role: 'admin' }
+        user: {
+          id: adminUser.id,
+          email: 'admin@sdlc.com',
+          role: 'admin',
+          fullName: adminUser.fullName || 'System Administrator',
+          name: adminUser.name || 'System Administrator',
+          employeeId: adminUser.employeeId || '',
+          businessGroup: adminUser.businessGroup || '',
+          account: adminUser.account || '',
+        }
       });
     }
 
@@ -182,8 +192,12 @@ app.post('/api/auth/login', async (req, res) => {
         id: authenticatedUser.id,
         email: authenticatedUser.email,
         role: authenticatedUser.role,
-        name: authenticatedUser.name || '',
-        gender: authenticatedUser.gender || ''
+        fullName: authenticatedUser.fullName || authenticatedUser.name || '',
+        name: authenticatedUser.name || authenticatedUser.fullName || '',
+        employeeId: authenticatedUser.employeeId || '',
+        businessGroup: authenticatedUser.businessGroup || '',
+        account: authenticatedUser.account || '',
+        lastLoginAt: authenticatedUser.lastLoginAt,
       }
     });
   } catch (error) {
@@ -195,7 +209,7 @@ app.post('/api/auth/login', async (req, res) => {
 // POST /api/auth/signup
 app.post('/api/auth/signup', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, name, fullName, employeeId, businessGroup, account } = req.body;
 
     if (!email || !password) {
       return res.status(200).json({ success: false, message: 'Email and password are required' });
@@ -205,7 +219,16 @@ app.post('/api/auth/signup', async (req, res) => {
       return res.status(200).json({ success: false, message: 'Password must be at least 6 characters' });
     }
 
-    const newUser = await createUser(email, password);
+    const cleanEmail = email.includes('@') ? email.trim() : `${email.trim()}@tcs.com`;
+
+    const newUser = await createUser(cleanEmail, password, {
+      fullName: fullName || name || '',
+      name: name || fullName || '',
+      employeeId: employeeId || '',
+      businessGroup: businessGroup || '',
+      account: account || '',
+    }, req);
+
     const token = signToken(newUser);
 
     res.cookie('token', token, {
@@ -219,7 +242,16 @@ app.post('/api/auth/signup', async (req, res) => {
     return res.status(201).json({
       token,
       message: 'User created successfully',
-      user: { id: newUser.id, email: newUser.email }
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        role: newUser.role,
+        fullName: newUser.fullName,
+        name: newUser.name,
+        employeeId: newUser.employeeId,
+        businessGroup: newUser.businessGroup,
+        account: newUser.account,
+      }
     });
   } catch (error) {
     console.warn('Signup API warning:', error.message || error);
@@ -247,7 +279,6 @@ app.get('/api/auth/me', async (req, res) => {
       return res.status(200).json({ user: null, message: 'User not found' });
     }
 
-    // Get cookie token or bearer token
     let token = req.cookies.token || null;
     if (!token) {
       const authHeader = req.headers.authorization;
@@ -262,8 +293,13 @@ app.get('/api/auth/me', async (req, res) => {
         id: dbUser.id,
         email: dbUser.email,
         role: dbUser.role,
-        name: dbUser.name || '',
-        gender: dbUser.gender || ''
+        fullName: dbUser.fullName || dbUser.name || '',
+        name: dbUser.name || dbUser.fullName || '',
+        employeeId: dbUser.employeeId || '',
+        businessGroup: dbUser.businessGroup || '',
+        account: dbUser.account || '',
+        isActive: dbUser.isActive,
+        lastLoginAt: dbUser.lastLoginAt,
       }
     });
   } catch (error) {
@@ -290,19 +326,27 @@ app.get('/api/users', requireAdmin, async (req, res) => {
 // POST /api/users/profile
 app.post('/api/users/profile', requireAuth, async (req, res) => {
   try {
-    const { name, gender } = req.body;
-    const cleanName = (name || '').trim();
-    const cleanGender = (gender || '').trim();
+    const { fullName, name, employeeId, businessGroup, account } = req.body;
 
-    const updatedUser = await updateUserProfile(req.user.id, cleanName, cleanGender);
+    const updatedUser = await updateUserProfile(req.user.id, {
+      fullName: fullName || name || '',
+      name: name || fullName || '',
+      employeeId: employeeId || '',
+      businessGroup: businessGroup || '',
+      account: account || '',
+    }, req);
+
     return res.json({
       message: 'Profile updated successfully',
       user: {
         id: updatedUser.id,
         email: updatedUser.email,
         role: updatedUser.role,
-        name: updatedUser.name || '',
-        gender: updatedUser.gender || ''
+        fullName: updatedUser.fullName,
+        name: updatedUser.name,
+        employeeId: updatedUser.employeeId,
+        businessGroup: updatedUser.businessGroup,
+        account: updatedUser.account,
       }
     });
   } catch (error) {
@@ -358,7 +402,7 @@ app.post('/api/settings', requireAdmin, async (req, res) => {
       }
     }
 
-    const updated = await updateSettings(settingsData);
+    const updated = await updateSettings(settingsData, req);
     return res.json({ message: 'Settings updated successfully', settings: updated });
   } catch (error) {
     console.error('Settings POST API Error:', error);
@@ -402,7 +446,7 @@ app.post('/api/questions', requireAdmin, async (req, res) => {
       return res.status(400).json({ message: 'Missing required question fields' });
     }
 
-    await saveQuestion(questionData);
+    await saveQuestion(questionData, req);
     return res.json({ message: 'Question saved successfully' });
   } catch (error) {
     // MySQL duplicate entry — UNIQUE constraint on (area, sub_area, practice)
@@ -424,7 +468,7 @@ const deleteQuestionHandler = async (req, res) => {
       return res.status(400).json({ message: 'Question ID is required' });
     }
 
-    const deleted = await deleteQuestion(id);
+    const deleted = await deleteQuestion(id, req);
     if (!deleted) {
       return res.status(404).json({ message: 'Question not found' });
     }
@@ -473,7 +517,7 @@ app.post('/api/assessments', requireAuth, async (req, res) => {
     assessmentData.userEmail = req.user.email;
     assessmentData.framework = framework;
 
-    const saved = await saveAssessment(assessmentData);
+    const saved = await saveAssessment(assessmentData, req);
     return res.json({ message: 'Assessment saved successfully', assessment: saved });
   } catch (error) {
     console.error('Assessments POST API Error:', error);
@@ -588,7 +632,7 @@ app.post('/api/feedback', requireAuth, async (req, res) => {
     feedbackData.userId = req.user.id;
     feedbackData.userEmail = req.user.email;
 
-    const saved = await saveFeedback(feedbackData);
+    const saved = await saveFeedback(feedbackData, req);
 
     // Also update the assessment record with feedback info
     const assessment = await getAssessmentById(feedbackData.assessmentId);
@@ -598,7 +642,7 @@ app.post('/api/feedback', requireAuth, async (req, res) => {
         comments: feedbackData.comments || '',
         createdAt: saved.createdAt
       };
-      await saveAssessment(assessment);
+      await saveAssessment(assessment, req);
     }
 
     return res.json({ message: 'Feedback submitted successfully', feedback: saved });
